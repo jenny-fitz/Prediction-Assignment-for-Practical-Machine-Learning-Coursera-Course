@@ -1,0 +1,175 @@
+---
+title: "Classification ML Alogorithm to Predict How Well Weight Lifting Exercise Was Done "
+author: "Jenny FitzGerald"
+date: "6/22/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## I. Introduction
+
+New tracking devices allow people to collect a large amount of data about their personal activities. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. The goal of this project is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict how well they perform barbell lifts.
+
+## II. Read In Testing and Training Data
+The first step of this project is to enable the required R packages, and to read in the training and test data sets.
+
+```{r echo=TRUE, warning=FALSE}
+#R Libraries
+library(ggplot2)
+library(caret)
+library(lattice)
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+library(reshape2)
+library(rpart)
+library(rpart.plot)
+library(e1071)
+library(randomForest)
+library(rattle)
+
+#Read-in training and test data sets to predict how well someone performed weightlifting exercise.
+training_dataset<-read.csv("C:/Users/Jenny/Documents/R Class/Machine Learning/pml-training.csv")
+test_dataset<-read.csv("C:/Users/Jenny/Documents/R Class/Machine Learning/pml-testing.csv")
+```
+
+## II. Set-up Test and Train Data Sets for Cross Validation
+
+For cross validation, I need to partition the data into training and test data sets. Thus, Below I split the training dataset so that 70% of the observations are in the testing dataset and 30% are in the testing/validation dataset. 
+
+```{r echo=TRUE, warning=FALSE}
+set.seed(123)
+train_set<- createDataPartition(training_dataset$X, p = .7,
+                                list = FALSE,
+                                times = 1)
+Train <- training_dataset[ train_set,]
+Test <- training_dataset[-train_set,]
+
+#Verify that classe proportions are similar in the training and validation dataset.
+prop.table(table(Train$classe))
+prop.table(table(Test$classe))
+```
+
+## III. Examine Structure of Traning Dataset
+
+Next, I need to look at the structure of the data, and what variables are available. I then drop the name and ID variables.I also look at how many missing values there are and remove variables/features with too many missing values. I also change classe from a character variable to a factor variable for the machine learning algorithms.
+
+```{r, echo=TRUE,warning=FALSE}
+#Look at what variables are included in the dataset.
+str(Train)
+
+#Drop name and ID Variables/features.
+Train<-Train[,-c(1,2)]
+Test<-Test[,-c(1,2)]
+
+#How many missing values are there?
+missing_values <-Train%>%
+  select(everything()) %>%  # replace to your needs
+  summarise_all(funs(sum(is.na(.))))
+
+#Find variables with no missing values.
+Pct_missing<-missing_values[,missing_values[,1:158]==0]
+Keep_Variables<-colnames(Pct_missing)
+
+#Remove columns with missing data.
+Train<-Train[,Keep_Variables]
+Test<-Test[,Keep_Variables]
+
+#Remove columns with blank values.
+Y <- as.data.frame(sapply(Train, function(x) sum(is.na(x) | x == "")))
+names(Y)<-c("Blank_Ct")
+Y<-rownames_to_column(Y)
+Y<-(Y[Y$Blank_Ct==0,])
+Keep_Variables<-as.vector(select(Y,c("rowname")))
+Train<-Train[,Keep_Variables[,1]]
+Test<-Test[,Keep_Variables[,1]]
+
+#Change Classe variable from character variable to factor variable.
+table(Train$classe)
+class(Train$classe)
+Train$classe<-factor(Train$classe,levels=c("A","B","C","D","E"))
+class(Train$classe)
+round(prop.table(table(Train$classe))*100,digits=1)
+
+table(Test$classe)
+class(Test)
+Test$classe<-factor(Test$classe,levels=c("A","B","C","D","E"))
+class(Test$classe)
+round(prop.table(table(Test$classe))*100,digits=1)
+
+str(Train)
+summary(Train)
+```
+
+## IV.Correlation btw. Variables
+
+The code below looks at the correlation between the numeric variables on the training dataset.
+
+```{r echo=TRUE}
+nums <- unlist(lapply(Test, is.numeric))  
+vars_Corr<-Test[,nums]
+
+library(Hmisc)
+library(corrplot)
+
+res <- cor(vars_Corr)
+corrplot(res, type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 45)
+
+#Highly correlated variables can be identified by dark blue. Dark Blue is only on the diagonal. Okay to proceed to modeling.
+
+```
+
+##V. First ML Algorithm - Decision Tree
+
+The first model I fit to the training data set to classify the weightlifting exercises, is a decision tree below. I then apply the decision tree model to the test data set to get the out of sample error. The accuracy of the DT model is 0.8795. Thus, out-of-sample error would be 0.1205.
+Next, I try random forest.
+
+```{r echo=TRUE}
+
+#Decision Tree
+Decision_tree_model <- rpart(classe ~ ., data=Train, method="class")
+fancyRpartPlot(Decision_tree_model)
+DT_Predictions <- predict(Decision_tree_model, Test, type = "class")
+confusionMatrix(DT_Predictions,Test$classe)
+
+#Accuracy : 0.8795. Let's try random forest.
+
+```
+
+##VI. Second ML Algorithm - Random Forest
+
+The second model I fit to the training data set to classify the weightlifting exercises, is a random forest below. I then apply the random forest model to the test data set to get the out of sample error. The accuracy of the DT model is 0.9993. Thus, out-of-sample error would be 0.0007.
+Thus, I will apply the RF to the testing dataset with 20 observations.
+
+```{r echo=TRUE}
+
+ctrl<-trainControl(method="repeatedcv",number=3,repeats=3)
+
+#Set-up tuning grid mtry, which gives how many features are randomly selected at each split.
+grid_rf<-expand.grid(.mtry=c(2,4,8))
+
+set.seed(12345)
+Random_Forest_Model<-train(classe~.,
+                           data=Train,
+                           method="rf",
+                           metric="Kappa",
+                           trControl=ctrl,
+                           tuneGrid=grid_rf)
+
+RF_Predictions <- predict(Random_Forest_Model, Test)
+confusionMatrix(RF_Predictions,Test$classe)
+
+```
+
+## VII. Apply RF Model to Test Dataset
+
+Below, I apply the RF model to the test dataset fro the course to predcict the classe variable for 20 observations.
+
+```{r echo=TRUE}
+RF_Predictions <- predict(Random_Forest_Model, test_dataset)
+RF_Predictions
+```

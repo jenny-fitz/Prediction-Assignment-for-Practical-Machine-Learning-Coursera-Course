@@ -1,0 +1,1 @@
+The R code in this folder applies a Decision Tree and a Random Forest model to tracking data  to classify how well a weightlifting exercise was performed. Thus, the ML algorithms are predicting the classe variable. Data for this project is from: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. 
